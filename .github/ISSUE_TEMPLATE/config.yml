@@ -2,7 +2,7 @@
 contact_links:
   - name: Development Help
     about: Help on the Development
-    url: https://github.com/Malix-Labs/<REPOSITORY>/discussions
+    url: https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed/discussions
   - name: Usage Help
     about: Help on the Usage
-    url: https://github.com/Malix-Labs/<REPOSITORY>/discussions
+    url: https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed/discussions

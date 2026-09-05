@@ -1,12 +1,12 @@
-# cff-version: 1.2.0
-# type: software
-# title: "<TITLE>"
-# abstract: "<DESCRIPTION>"
-# repository-code: "https://github.com/Malix-Labs/<REPOSITORY>"
-# license: AGPL-3.0-or-later
-# authors:
-#   - alias: "Malix"
-#     family-names: "Brunet"
-#     given-names: "Alix"
-#     orcid: "https://orcid.org/0009-0005-6274-1845"
-#     email: "alixbrunetcontact@gmail.com"
+cff-version: 1.2.0
+type: software
+title: "Nix - Remote Builders Distributed"
+abstract: "Nix's remote builders in a distributed manner, including a GitHub Action"
+repository-code: "https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed"
+license: AGPL-3.0-or-later
+authors:
+  - alias: "Malix"
+    family-names: "Brunet"
+    given-names: "Alix"
+    orcid: "https://orcid.org/0009-0005-6274-1845"
+    email: "alixbrunetcontact@gmail.com"
