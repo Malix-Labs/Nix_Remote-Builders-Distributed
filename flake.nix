@@ -47,7 +47,7 @@
               nix-eval-jobs
             ];
             text = ''
-              exec nu "${./src/nix-remote}" "$@"
+              exec nu "${./src/nix-remote.nu}" "$@"
             '';
           };
         in
@@ -56,6 +56,20 @@
             nixfmt.enable = true;
             deadnix.enable = true;
             statix.enable = true;
+            nufmt = {
+              enable = true;
+              types = [ "file" ];
+              files = "\\.nu$";
+            };
+            nu-lint = {
+              enable = true;
+              name = "nu-lint";
+              description = "A linter for Nushell scripts";
+              package = pkgs.nu-lint;
+              entry = pkgs.lib.getExe pkgs.nu-lint;
+              files = "\\.nu$";
+            };
+            actionlint.enable = true;
           };
 
           formatter = pkgs.nixfmt;
