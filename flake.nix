@@ -57,11 +57,7 @@
             nixfmt.enable = true;
             deadnix.enable = true;
             statix.enable = true;
-            nufmt = {
-              enable = true;
-              types = [ "file" ];
-              files = "\\.nu$";
-            };
+            nufmt.enable = true;
             nu-lint = {
               enable = true;
               name = "nu-lint";
