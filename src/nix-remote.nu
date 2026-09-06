@@ -1,6 +1,8 @@
 # Distribute Nix builds across on-demand cloud runners over Tailscale SSH.
 def main [
   --provider: string = "gha" # Cloud provider backend
+  --fast # Use nix-fast-build for pipelined eval + remote builds
+  --built-in # Force standard nix CLI executor
   --max-runners: int = 4 # Maximum auto-scaled runners
   --runners: int # Force an exact total number of runners
   --x86: int # Force an exact x86_64-linux runner count
@@ -14,6 +16,11 @@ def main [
   --keep-alive # Keep runners alive after command finishes
   ...rest: string # Nix command and arguments (e.g. build .#default)
 ] {
+    if $fast and $built_in {
+        print --stderr "Error: --fast and --built-in are mutually exclusive."
+        exit 1
+    }
+
     if ($rest | is-empty) {
         print --stderr "Error: No Nix command specified."
         help main
@@ -104,27 +111,28 @@ def main [
         mut unbuilt_systems = []
         if $is_flake_check {
             let eval_res = (
-                nix-eval-jobs --check-cache-status --force-recurse --flake . --select "flake: flake.outputs.checks"
+                nix-eval-jobs --check-cache-status --force-recurse --flake . --select "flake: (flake.outputs.checks or {})"
                 | complete
             )
             if $eval_res.exit_code == 0 and ($eval_res.stdout | str trim | is-not-empty) {
                 $unbuilt_systems = ($eval_res.stdout
-          | lines
-          | where ($it | str starts-with "{")
-          | each {|l| try { $l | from json } catch { null } }
-          | where ((not $it.isCached?))
-          | get --optional system
-          | compact
-        )
+                    | lines
+                    | where ($it | str starts-with "{")
+                    | each {|l| try { $l | from json } catch { null } }
+                    | where $it != null and ($it.fatal? != true) and ((not ($it.isCached? | default false)))
+                    | get --optional system
+                    | compact
+                )
             }
         } else {
             let dry_args = if $nix_args.0 == "build" {
-                [...$nix_args, "--dry-run"]
+                [...$nix_args, "--dry-run", "--json"]
             } else {
                 [
                     "build"
                     ...($nix_args | skip 1)
                     "--dry-run"
+                    "--json"
                 ]
             }
             let dry_res = (^nix ...$dry_args | complete)
@@ -132,12 +140,10 @@ def main [
                 print --stderr $dry_res.stderr
                 exit $dry_res.exit_code
             }
-            let drvs = (
-                $dry_res.stderr
-                | lines
-                | where ($it | str ends-with ".drv")
-                | each {|l| $l | str trim}
-            )
+            let drvs = try {
+                $dry_res.stdout | from json | get --optional drvPath | compact
+            } catch { [] }
+
             if ($drvs | is-not-empty) {
                 let drv_info = (
                     ^nix derivation show ...$drvs
@@ -307,13 +313,49 @@ def main [
   })
     let builders_arg = $builders_list | str join ";"
 
-    print $"\nRunning: nix ($nix_args | str join ' ')\n"
+    let use_fast = if $fast {
+        true
+    } else if $built_in {
+        false
+    } else {
+        # Sane automatic default:
+        # Use fast (nix-fast-build) for flake check or batch attribute builds (.#checks, .#packages)
+        let is_check = ($nix_args.0 == "flake" and ($nix_args.1? == "check"))
+        let is_batch = ($nix_args | any {|a|
+            ($a | str starts-with ".#checks") or ($a | str starts-with ".#packages") or ($a | str starts-with ".#legacyPackages")
+        })
+        let is_unsupported_subcmd = ($nix_args.0 in ["run", "shell", "develop"])
 
-    try {
-        ^nix ...$nix_args --builders $builders_arg --max-jobs $local_jobs
-        do $do_cleanup $nodes $keep_alive
-    } catch {|err|
-        do $do_cleanup $nodes $keep_alive
-        error make {msg: $"Nix build failed: ($err.msg)"}
+        ($is_check or $is_batch) and (not $is_unsupported_subcmd)
+    }
+
+    if $use_fast {
+        let flake_target = if ($nix_args.0 == "flake") and ($nix_args.1? == "check") {
+            ".#checks"
+        } else if ($nix_args.0 == "build") and (($nix_args | length) > 1) {
+            $nix_args.1
+        } else {
+            ".#checks"
+        }
+
+        print $"\nRunning with nix-fast-build: flake target '($flake_target)'\n"
+
+        try {
+            nix-fast-build --flake $flake_target --option builders $builders_arg --option max-jobs ($local_jobs | into string) --no-nom
+            do $do_cleanup $nodes $keep_alive
+        } catch {|err|
+            do $do_cleanup $nodes $keep_alive
+            error make --unspanned {msg: $"nix-fast-build failed: ($err.msg)"}
+        }
+    } else {
+        print $"\nRunning: nix ($nix_args | str join ' ')\n"
+
+        try {
+            ^nix ...$nix_args --builders $builders_arg --max-jobs $local_jobs
+            do $do_cleanup $nodes $keep_alive
+        } catch {|err|
+            do $do_cleanup $nodes $keep_alive
+            error make --unspanned {msg: $"Nix build failed: ($err.msg)"}
+        }
     }
 }
