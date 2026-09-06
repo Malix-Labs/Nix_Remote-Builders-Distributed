@@ -61,6 +61,7 @@
               types = [ "file" ];
               files = "\\.nu$";
             };
+            actionlint.enable = true;
           };
 
           formatter = pkgs.nixfmt;

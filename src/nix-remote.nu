@@ -15,7 +15,7 @@ def main [
   ...rest: string # Nix command and arguments (e.g. build .#default)
 ] {
     if ($rest | is-empty) {
-        print -e "Error: No Nix command specified."
+        print --stderr "Error: No Nix command specified."
         help main
         exit 1
     }
@@ -27,16 +27,16 @@ def main [
     }
 
     if ($nix_args | is-empty) {
-        print -e "Error: No Nix subcommand specified after 'nix'."
+        print --stderr "Error: No Nix subcommand specified after 'nix'."
         exit 1
     }
 
     if $provider == "gha" {
         let auth_check = try {
-            ^gh auth status | complete
+            gh auth status | complete
         } catch { {exit_code: 1} }
         if $auth_check.exit_code != 0 {
-            print -e "Error: GitHub CLI ('gh') is not authenticated or not installed.\nPlease run 'gh auth login' or export GITHUB_TOKEN."
+            print --stderr "Error: GitHub CLI ('gh') is not authenticated or not installed.\nPlease run 'gh auth login' or export GITHUB_TOKEN."
             exit 1
         }
     }
@@ -53,7 +53,7 @@ def main [
     let config_file = $xdg_config | path join "nix-remote" "config.toml"
     let config_repo = if ($config_file | path exists) {
         try {
-            open $config_file | get -o repo
+            open $config_file | get --optional repo
         } catch { null }
     } else {
         null
@@ -64,19 +64,19 @@ def main [
     } else if $config_repo != null and ($config_repo | str length) > 0 {
         $config_repo
     } else {
-        let detected = (^gh repo view --json nameWithOwner -q .nameWithOwner | complete)
+        let detected = gh repo view --json nameWithOwner -q .nameWithOwner | complete
         if $detected.exit_code == 0 and ($detected.stdout | str trim | is-not-empty) {
             $detected.stdout | str trim
         } else {
             let git_url = if (which git | is-not-empty) {
-                (^git remote get-url origin | complete)
+                (git remote get-url origin | complete)
             } else {
                 {exit_code: 1, stdout: ""}
             }
             if $git_url.exit_code == 0 and ($git_url.stdout | str trim | is-not-empty) {
                 $git_url.stdout | str trim
             } else {
-                print -e $"Error: No runner repository specified.\nPlease configure a repository in '($config_file)', use --repo <owner/repo>, or run from inside a git repository."
+                print --stderr $"Error: No runner repository specified.\nPlease configure a repository in '($config_file)', use --repo <owner/repo>, or run from inside a git repository."
                 exit 1
             }
         }
@@ -104,16 +104,16 @@ def main [
         mut unbuilt_systems = []
         if $is_flake_check {
             let eval_res = (
-                ^nix-eval-jobs --check-cache-status --force-recurse --flake . --select "flake: flake.outputs.checks"
+                nix-eval-jobs --check-cache-status --force-recurse --flake . --select "flake: flake.outputs.checks"
                 | complete
             )
             if $eval_res.exit_code == 0 and ($eval_res.stdout | str trim | is-not-empty) {
                 $unbuilt_systems = ($eval_res.stdout
           | lines
-          | where {|l| $l | str starts-with "{"}
+          | where ($it | str starts-with "{")
           | each {|l| try { $l | from json } catch { null } }
-          | where ($it.isCached? == false)
-          | get -o system
+          | where ((not $it.isCached?))
+          | get --optional system
           | compact
         )
             }
@@ -129,13 +129,13 @@ def main [
             }
             let dry_res = (^nix ...$dry_args | complete)
             if $dry_res.exit_code != 0 {
-                print -e $dry_res.stderr
+                print --stderr $dry_res.stderr
                 exit $dry_res.exit_code
             }
             let drvs = (
                 $dry_res.stderr
                 | lines
-                | where {|l| $l | str ends-with ".drv"}
+                | where ($it | str ends-with ".drv")
                 | each {|l| $l | str trim}
             )
             if ($drvs | is-not-empty) {
@@ -192,7 +192,7 @@ def main [
         $x86_cnt = 1
     }
 
-    let session_id = $"b((random chars -l 6 | str lowercase))"
+    let session_id = $"b(random chars --length 6 | str downcase)"
 
     let nodes = [
         ...(
@@ -210,13 +210,13 @@ def main [
     ]
     let matrix_json = ({
         include: ($nodes | select id os)
-    } | to json -r)
+    } | to json --raw)
 
     let do_cleanup = {|hosts: list<any>, keep: bool|
         if not $keep {
             print "\nShutting down remote builders..."
             $hosts | par-each {|node|
-        ^ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 $"runner@($node.host)" "touch /tmp/nix-builder-done" | complete
+        ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 $"runner@($node.host)" "touch /tmp/nix-builder-done" | complete
       }
         } else {
             print "\nKeep-alive enabled. Builders will stay running until their timeout."
@@ -243,23 +243,23 @@ def main [
         ]
 
         if $timeout_startup != null {
-            $gh_args = ($gh_args | append [-f $"timeout_startup=($timeout_startup)"])
+            $gh_args ++= [-f $"timeout_startup=($timeout_startup)"]
         }
         if $timeout_idle != null {
-            $gh_args = ($gh_args | append [-f $"timeout_idle=($timeout_idle)"])
+            $gh_args ++= [-f $"timeout_idle=($timeout_idle)"]
         }
         if $timeout_linger != null {
-            $gh_args = ($gh_args | append [-f $"timeout_linger=($timeout_linger)"])
+            $gh_args ++= [-f $"timeout_linger=($timeout_linger)"]
         }
 
-        let dispatch_res = (^gh ...$gh_args | complete)
+        let dispatch_res = gh ...$gh_args | complete
         if $dispatch_res.exit_code != 0 {
-            print -e $"Error dispatching workflow: ($dispatch_res.stderr)"
+            print --stderr $"Error dispatching workflow: ($dispatch_res.stderr)"
             do $do_cleanup $nodes false
             exit 1
         }
     } else {
-        print -e $"Error: Unsupported provider '($provider)'."
+        print --stderr $"Error: Unsupported provider '($provider)'."
         do $do_cleanup $nodes false
         exit 1
     }
@@ -272,15 +272,15 @@ def main [
     while ($ready_hosts | length) < ($nodes | length) {
         let elapsed = ((date now) - $start_time | into int) / 1_000_000_000
         if $elapsed >= $wait_timeout {
-            print -e $"\nError: Timed out waiting for runners after ($wait_timeout)s."
+            print --stderr $"\nError: Timed out waiting for runners after ($wait_timeout)s."
             do $do_cleanup $nodes false
             exit 1
         }
 
         let newly_ready = ($nodes
-      | where {|node| not ($node.host in $ready_hosts)}
+      | where not ($it.host in $ready_hosts)
       | par-each {|node|
-          let probe = (^ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=2 -o BatchMode=yes $"runner@($node.host)" "true" | complete)
+          let probe = ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=2 -o BatchMode=yes $"runner@($node.host)" "true" | complete
           if ($probe.exit_code == 0) {
             $node
           } else {
@@ -291,7 +291,7 @@ def main [
     )
 
         for node in $newly_ready {
-            $ready_hosts = ($ready_hosts | append $node.host)
+            $ready_hosts ++= [$node.host]
             print $"  Builder online: ($node.host) \(($node.system)\)"
         }
 
