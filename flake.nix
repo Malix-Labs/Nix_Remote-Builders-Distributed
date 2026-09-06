@@ -66,7 +66,7 @@
               name = "nu-lint";
               description = "A linter for Nushell scripts";
               package = pkgs.nu-lint;
-              entry = "${pkgs.lib.getExe pkgs.nu-lint}";
+              entry = pkgs.lib.getExe pkgs.nu-lint;
               files = "\\.nu$";
             };
             actionlint.enable = true;
