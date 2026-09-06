@@ -1,4 +1,5 @@
 name: "Nix Remote Builder"
+run-name: "${{ inputs.target != '' && format('Nix Remote: {0} [{1}]', inputs.target, inputs.session_id) || format('Nix Remote: [{0}]', inputs.session_id) }}"
 
 on:
   workflow_dispatch:
@@ -7,6 +8,11 @@ on:
         description: "Unique session identifier"
         required: true
         type: string
+      target:
+        description: "Target or Nix command being executed"
+        required: false
+        type: string
+        default: ""
       matrix:
         description: "JSON matrix specification ({ include: [...] })"
         required: true
@@ -33,7 +39,7 @@ on:
 
 jobs:
   builder:
-    name: "Nix Builder (${{ matrix.id }})"
+    name: "Nix Builder: ${{ matrix.name || matrix.id }}"
     runs-on: ${{ matrix.os }}
     environment: "Nix Builders"
     strategy:
@@ -80,9 +86,15 @@ jobs:
               break
             fi
 
-            # Check active SSH sessions or active nix-daemon processes
-            ACTIVE_SSH=$(ss -H -t state established '( sport = :22 )' 2>/dev/null | wc -l)
-            ACTIVE_NIX=$(pgrep -u runner -f "nix-daemon" 2>/dev/null | wc -l)
+            # Check active SSH sessions (ss on Linux, lsof on macOS)
+            if command -v ss >/dev/null 2>&1; then
+              ACTIVE_SSH=$(ss -H -t state established '( sport = :22 )' 2>/dev/null | wc -l)
+            elif command -v lsof >/dev/null 2>&1; then
+              ACTIVE_SSH=$(lsof -iTCP:22 -sTCP:ESTABLISHED 2>/dev/null | sed 1d | wc -l)
+            else
+              ACTIVE_SSH=0
+            fi
+            ACTIVE_NIX=$(pgrep -f "nix-daemon" 2>/dev/null | wc -l)
 
             if [ "$ACTIVE_SSH" -gt 0 ] || [ "$ACTIVE_NIX" -gt 0 ]; then
               if [ "$CONNECTED_ONCE" = false ]; then

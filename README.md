@@ -134,6 +134,7 @@ Flags:
   --runners <int>: Force an exact total number of runners
   --x86 <int>: Force an exact x86_64-linux runner count
   --arm <int>: Force an exact aarch64-linux runner count
+  --darwin <int>: Force an exact aarch64-darwin runner count
   --local-jobs <int>: Local Nix jobs limit (0 offloads all builds to remote) (default: 0)
   --timeout-startup <int>: Seconds to wait for initial runner connection
   --timeout-idle <int>: Seconds of inactivity before runner disconnects
