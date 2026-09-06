@@ -62,14 +62,7 @@
               types = [ "file" ];
               files = "\\.nu$";
             };
-            nu-lint = {
-              enable = true;
-              name = "nu-lint";
-              description = "A linter for Nushell scripts";
-              package = pkgs.nu-lint;
-              entry = pkgs.lib.getExe pkgs.nu-lint;
-              files = "\\.nu$";
-            };
+            nu-lint.enable = true;
             actionlint.enable = true;
           };
 
