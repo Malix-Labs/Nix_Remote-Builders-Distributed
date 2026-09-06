@@ -47,7 +47,7 @@
               nix-eval-jobs
             ];
             text = ''
-              exec nu "${./src/nix-remote}" "$@"
+              exec nu "${./src/nix-remote.nu}" "$@"
             '';
           };
         in
@@ -56,6 +56,11 @@
             nixfmt.enable = true;
             deadnix.enable = true;
             statix.enable = true;
+            nufmt = {
+              enable = true;
+              types = [ "file" ];
+              files = "\\.nu$";
+            };
           };
 
           formatter = pkgs.nixfmt;

@@ -1,0 +1,319 @@
+# Distribute Nix builds across on-demand cloud runners over Tailscale SSH.
+def main [
+  --provider: string = "gha" # Cloud provider backend
+  --max-runners: int = 4 # Maximum auto-scaled runners
+  --runners: int # Force an exact total number of runners
+  --x86: int # Force an exact x86_64-linux runner count
+  --arm: int # Force an exact aarch64-linux runner count
+  --darwin: int # Force an exact aarch64-darwin runner count
+  --local-jobs: int = 0 # Local Nix jobs limit (0 offloads all builds to remote)
+  --timeout-startup: int # Seconds to wait for initial runner connection
+  --timeout-idle: int # Seconds of inactivity before runner disconnects
+  --timeout-linger: int # Seconds to keep runner alive after build completion
+  --repo: string # Target repository hosting the runner workflow (owner/repo)
+  --keep-alive # Keep runners alive after command finishes
+  ...rest: string # Nix command and arguments (e.g. build .#default)
+] {
+    if ($rest | is-empty) {
+        print -e "Error: No Nix command specified."
+        help main
+        exit 1
+    }
+
+    let nix_args = if $rest.0 == "nix" {
+        $rest | skip 1
+    } else {
+        $rest
+    }
+
+    if ($nix_args | is-empty) {
+        print -e "Error: No Nix subcommand specified after 'nix'."
+        exit 1
+    }
+
+    if $provider == "gha" {
+        let auth_check = try {
+            ^gh auth status | complete
+        } catch { {exit_code: 1} }
+        if $auth_check.exit_code != 0 {
+            print -e "Error: GitHub CLI ('gh') is not authenticated or not installed.\nPlease run 'gh auth login' or export GITHUB_TOKEN."
+            exit 1
+        }
+    }
+
+    let xdg_config = (
+        $env.XDG_CONFIG_HOME?
+        | default (
+            $env.HOME?
+            | default "~"
+            | path expand
+            | path join ".config"
+        )
+    )
+    let config_file = $xdg_config | path join "nix-remote" "config.toml"
+    let config_repo = if ($config_file | path exists) {
+        try {
+            open $config_file | get -o repo
+        } catch { null }
+    } else {
+        null
+    }
+
+    let target_repo = if $repo != null and ($repo | str length) > 0 {
+        $repo
+    } else if $config_repo != null and ($config_repo | str length) > 0 {
+        $config_repo
+    } else {
+        let detected = (^gh repo view --json nameWithOwner -q .nameWithOwner | complete)
+        if $detected.exit_code == 0 and ($detected.stdout | str trim | is-not-empty) {
+            $detected.stdout | str trim
+        } else {
+            let git_url = if (which git | is-not-empty) {
+                (^git remote get-url origin | complete)
+            } else {
+                {exit_code: 1, stdout: ""}
+            }
+            if $git_url.exit_code == 0 and ($git_url.stdout | str trim | is-not-empty) {
+                $git_url.stdout | str trim
+            } else {
+                print -e $"Error: No runner repository specified.\nPlease configure a repository in '($config_file)', use --repo <owner/repo>, or run from inside a git repository."
+                exit 1
+            }
+        }
+    }
+
+    mut x86_cnt = 0
+    mut arm_cnt = 0
+    mut darwin_cnt = 0
+
+    if $x86 != null or $arm != null or $darwin != null {
+        $x86_cnt = ($x86 | default 0)
+        $arm_cnt = ($arm | default 0)
+        $darwin_cnt = ($darwin | default 0)
+        print $"Using explicit runner configuration: ($x86_cnt) x86, ($arm_cnt) ARM, ($darwin_cnt) Darwin"
+    } else if $runners != null {
+        $x86_cnt = $runners
+        $arm_cnt = 0
+        $darwin_cnt = 0
+        print $"Using explicit runner count: ($x86_cnt) x86"
+    } else {
+        print "Evaluating build requirements..."
+
+        let is_flake_check = ($nix_args.0 == "flake" and ($nix_args.1? == "check"))
+
+        mut unbuilt_systems = []
+        if $is_flake_check {
+            let eval_res = (
+                ^nix-eval-jobs --check-cache-status --force-recurse --flake . --select "flake: flake.outputs.checks"
+                | complete
+            )
+            if $eval_res.exit_code == 0 and ($eval_res.stdout | str trim | is-not-empty) {
+                $unbuilt_systems = ($eval_res.stdout
+          | lines
+          | where {|l| $l | str starts-with "{"}
+          | each {|l| try { $l | from json } catch { null } }
+          | where ($it.isCached? == false)
+          | get -o system
+          | compact
+        )
+            }
+        } else {
+            let dry_args = if $nix_args.0 == "build" {
+                [...$nix_args, "--dry-run"]
+            } else {
+                [
+                    "build"
+                    ...($nix_args | skip 1)
+                    "--dry-run"
+                ]
+            }
+            let dry_res = (^nix ...$dry_args | complete)
+            if $dry_res.exit_code != 0 {
+                print -e $dry_res.stderr
+                exit $dry_res.exit_code
+            }
+            let drvs = (
+                $dry_res.stderr
+                | lines
+                | where {|l| $l | str ends-with ".drv"}
+                | each {|l| $l | str trim}
+            )
+            if ($drvs | is-not-empty) {
+                let drv_info = (
+                    ^nix derivation show ...$drvs
+                    | complete
+                    | get stdout
+                    | from json
+                )
+                $unbuilt_systems = ($drv_info.derivations | values | get system)
+            }
+        }
+
+        let unbuilt_count = $unbuilt_systems | length
+
+        if $unbuilt_count == 0 {
+            print "All derivations are cached. No remote builders needed.\nExecuting locally..."
+            ^nix ...$nix_args
+            return
+        }
+
+        let x86_unbuilt = $unbuilt_systems | where $it == "x86_64-linux" | length
+        let arm_unbuilt = $unbuilt_systems | where $it == "aarch64-linux" | length
+        let darwin_unbuilt = $unbuilt_systems | where $it == "aarch64-darwin" | length
+
+        let scale_for = {|count: int|
+            if $count <= 0 { 0 } else if $count <= 1 { 1 } else if $count <= 4 { 2 } else if $count <= 8 { 3 } else { $max_runners }
+        }
+
+        $x86_cnt = (do $scale_for $x86_unbuilt)
+        $arm_cnt = (do $scale_for $arm_unbuilt)
+        $darwin_cnt = (do $scale_for $darwin_unbuilt)
+
+        if $x86_cnt == 0 and $arm_cnt == 0 and $darwin_cnt == 0 {
+            $x86_cnt = 1
+        }
+
+        let total_unscaled = $x86_cnt + $arm_cnt + $darwin_cnt
+        if $total_unscaled > $max_runners {
+            let non_x86 = (if $arm_cnt > 0 { 1 } else { 0 }) + (if $darwin_cnt > 0 { 1 } else { 0 })
+            $arm_cnt = (if $arm_cnt > 0 { 1 } else { 0 })
+            $darwin_cnt = (if $darwin_cnt > 0 { 1 } else { 0 })
+            $x86_cnt = [
+                ($max_runners - $non_x86)
+                1
+            ] | math max
+        }
+
+        print $"Build analysis: ($unbuilt_count) unbuilt \(x86: ($x86_unbuilt), arm: ($arm_unbuilt), darwin: ($darwin_unbuilt)\), allocating ($x86_cnt) x86_64, ($arm_cnt) aarch64, ($darwin_cnt) aarch64-darwin"
+    }
+
+    let total_runners = $x86_cnt + $arm_cnt + $darwin_cnt
+    if $total_runners <= 0 {
+        $x86_cnt = 1
+    }
+
+    let session_id = $"b((random chars -l 6 | str lowercase))"
+
+    let nodes = [
+        ...(
+            0..<$x86_cnt
+            | each {|i| { id: $"x86-($i)", os: "ubuntu-latest", system: "x86_64-linux", cores: 4, host: $"nix-builder-($session_id)-x86-($i)" } }
+        )
+        ...(
+            0..<$arm_cnt
+            | each {|i| { id: $"arm-($i)", os: "ubuntu-26.04-arm", system: "aarch64-linux", cores: 4, host: $"nix-builder-($session_id)-arm-($i)" } }
+        )
+        ...(
+            0..<$darwin_cnt
+            | each {|i| { id: $"darwin-($i)", os: "macos-latest", system: "aarch64-darwin", cores: 3, host: $"nix-builder-($session_id)-darwin-($i)" } }
+        )
+    ]
+    let matrix_json = ({
+        include: ($nodes | select id os)
+    } | to json -r)
+
+    let do_cleanup = {|hosts: list<any>, keep: bool|
+        if not $keep {
+            print "\nShutting down remote builders..."
+            $hosts | par-each {|node|
+        ^ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 $"runner@($node.host)" "touch /tmp/nix-builder-done" | complete
+      }
+        } else {
+            print "\nKeep-alive enabled. Builders will stay running until their timeout."
+        }
+    }
+
+    let target_desc = ['nix' ...$nix_args] | str join ' '
+
+    if $provider == "gha" {
+        print $"\nDispatching GitHub Actions workflow on ($target_repo)...\n  Session: ($session_id)\n  Target: ($target_desc)\n  Total builders: ($nodes | length) \(x86: ($x86_cnt), arm: ($arm_cnt), darwin: ($darwin_cnt)\)"
+
+        mut gh_args = [
+            workflow
+            run
+            nix-builder.yml
+            --repo
+            $target_repo
+            -f
+            $"session_id=($session_id)"
+            -f
+            $"target=($target_desc)"
+            -f
+            $"matrix=($matrix_json)"
+        ]
+
+        if $timeout_startup != null {
+            $gh_args = ($gh_args | append [-f $"timeout_startup=($timeout_startup)"])
+        }
+        if $timeout_idle != null {
+            $gh_args = ($gh_args | append [-f $"timeout_idle=($timeout_idle)"])
+        }
+        if $timeout_linger != null {
+            $gh_args = ($gh_args | append [-f $"timeout_linger=($timeout_linger)"])
+        }
+
+        let dispatch_res = (^gh ...$gh_args | complete)
+        if $dispatch_res.exit_code != 0 {
+            print -e $"Error dispatching workflow: ($dispatch_res.stderr)"
+            do $do_cleanup $nodes false
+            exit 1
+        }
+    } else {
+        print -e $"Error: Unsupported provider '($provider)'."
+        do $do_cleanup $nodes false
+        exit 1
+    }
+
+    print "\nWaiting for builders to join Tailnet (Tailscale SSH)..."
+    let wait_timeout = 300
+    let start_time = (date now)
+    mut ready_hosts = []
+
+    while ($ready_hosts | length) < ($nodes | length) {
+        let elapsed = ((date now) - $start_time | into int) / 1_000_000_000
+        if $elapsed >= $wait_timeout {
+            print -e $"\nError: Timed out waiting for runners after ($wait_timeout)s."
+            do $do_cleanup $nodes false
+            exit 1
+        }
+
+        let newly_ready = ($nodes
+      | where {|node| not ($node.host in $ready_hosts)}
+      | par-each {|node|
+          let probe = (^ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=2 -o BatchMode=yes $"runner@($node.host)" "true" | complete)
+          if ($probe.exit_code == 0) {
+            $node
+          } else {
+            null
+          }
+        }
+      | compact
+    )
+
+        for node in $newly_ready {
+            $ready_hosts = ($ready_hosts | append $node.host)
+            print $"  Builder online: ($node.host) \(($node.system)\)"
+        }
+
+        if ($ready_hosts | length) < ($nodes | length) {
+            sleep 2sec
+        }
+    }
+
+    print $"\nAll ($nodes | length) builders online."
+
+    let builders_list = ($nodes | each {|node|
+    $"ssh-ng://runner@($node.host)?remote-program=/nix/var/nix/profiles/default/bin/nix-daemon ($node.system) - ($node.cores) 1 kvm,benchmark,big-parallel - -"
+  })
+    let builders_arg = $builders_list | str join ";"
+
+    print $"\nRunning: nix ($nix_args | str join ' ')\n"
+
+    try {
+        ^nix ...$nix_args --builders $builders_arg --max-jobs $local_jobs
+        do $do_cleanup $nodes $keep_alive
+    } catch {|err|
+        do $do_cleanup $nodes $keep_alive
+        error make {msg: $"Nix build failed: ($err.msg)"}
+    }
+}
