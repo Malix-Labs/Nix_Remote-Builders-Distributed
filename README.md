@@ -7,7 +7,7 @@ Nix's remote builders in a distributed manner, including a GitHub Action
 `nix-remote` allows you to dynamically offload any `nix` command (`build`, `flake check`, `shell`, `develop`) to an on-demand cluster of remote builders.
 
 * **On-Demand & Ephemeral**: Zero 24/7 compute costs. Runners spin up on your chosen provider (GitHub Actions, etc.) only when a build needs compilation and self-destruct when finished.
-* **Intelligent Auto-Sizing with `nix-eval-jobs`**: Automatically inspects derivations, skips remote provisioning completely if everything is cached (0s delay), and scales x86/ARM runners based on real unbuilt requirements.
+* **Intelligent Auto-Sizing with `nix-eval-jobs`**: Automatically inspects derivations, skips remote provisioning completely if everything is cached (0s delay), and scales x86/ARM/Darwin runners based on real unbuilt requirements.
 * **NAT Traversal via Tailscale**: Direct end-to-end WireGuard tunnel using ephemeral auth keys. No port forwarding or public IP required on your local machine.
 * **3-Tier Configurable Lifecycle Watchdog**:
   * `timeout_startup` (default: 300s): Waits for local client to establish first connection.
@@ -37,7 +37,7 @@ sequenceDiagram
         CLI->>Provider: Dispatch workflow (passes matrix, session_id)
         
         par Runners Boot in Parallel
-            Provider->>Runners: Provision ubuntu-latest / ubuntu-24.04-arm
+            Provider->>Runners: Provision ubuntu-latest / ubuntu-26.04-arm / macos-latest
             Runners->>Runners: Setup Nix + Magic Nix Cache
             Runners->>Tailnet: tailscale up --ssh (Tailscale SSH enabled)
         end

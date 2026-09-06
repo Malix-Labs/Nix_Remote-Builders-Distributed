@@ -157,23 +157,14 @@ def main [
     $x86_cnt = 1
   }
 
-  let include = [
-    ...(0..<$x86_cnt | each {|i| { id: $"x86-($i)", name: $"x86_64-linux #($i) \(4 cores\)", os: "ubuntu-latest", system: "x86_64-linux", cores: 4 } }),
-    ...(0..<$arm_cnt | each {|i| { id: $"arm-($i)", name: $"aarch64-linux #($i) \(4 cores\)", os: "ubuntu-26.04-arm", system: "aarch64-linux", cores: 4 } }),
-    ...(0..<$darwin_cnt | each {|i| { id: $"darwin-($i)", name: $"aarch64-darwin #($i) \(3 cores\)", os: "macos-latest", system: "aarch64-darwin", cores: 3 } })
+  let session_id = $"b((random chars -l 6 | str lowercase))"
+
+  let nodes = [
+    ...(0..<$x86_cnt | each {|i| { id: $"x86-($i)", os: "ubuntu-latest", system: "x86_64-linux", cores: 4, host: $"nix-builder-($session_id)-x86-($i)" } }),
+    ...(0..<$arm_cnt | each {|i| { id: $"arm-($i)", os: "ubuntu-26.04-arm", system: "aarch64-linux", cores: 4, host: $"nix-builder-($session_id)-arm-($i)" } }),
+    ...(0..<$darwin_cnt | each {|i| { id: $"darwin-($i)", os: "macos-latest", system: "aarch64-darwin", cores: 3, host: $"nix-builder-($session_id)-darwin-($i)" } })
   ]
-  let matrix_json = ({ include: $include } | to json -r)
-
-  let rand_suffix = (random chars -l 6 | str lowercase)
-  let session_id = $"b($rand_suffix)"
-
-  let expected_nodes = ($include | each {|node|
-    {
-      host: $"nix-builder-($session_id)-($node.id)",
-      system: $node.system,
-      cores: $node.cores
-    }
-  })
+  let matrix_json = ({ include: ($nodes | select id os) } | to json -r)
 
   let do_cleanup = {|hosts: list<any>, keep: bool|
     if (not $keep) {
@@ -189,7 +180,7 @@ def main [
   let target_desc = (['nix' ...$nix_args] | str join ' ')
 
   if ($provider == "gha") {
-    print $"\nDispatching GitHub Actions workflow on ($target_repo)...\n  Session: ($session_id)\n  Target: ($target_desc)\n  Total builders: ($include | length) \(x86: ($x86_cnt), arm: ($arm_cnt), darwin: ($darwin_cnt)\)"
+    print $"\nDispatching GitHub Actions workflow on ($target_repo)...\n  Session: ($session_id)\n  Target: ($target_desc)\n  Total builders: ($nodes | length) \(x86: ($x86_cnt), arm: ($arm_cnt), darwin: ($darwin_cnt)\)"
 
     mut gh_args = [
       workflow run nix-builder.yml
@@ -212,12 +203,12 @@ def main [
     let dispatch_res = (^gh ...$gh_args | complete)
     if ($dispatch_res.exit_code != 0) {
       print -e $"Error dispatching workflow: ($dispatch_res.stderr)"
-      do $do_cleanup $expected_nodes false
+      do $do_cleanup $nodes false
       exit 1
     }
   } else {
     print -e $"Error: Unsupported provider '($provider)'."
-    do $do_cleanup $expected_nodes false
+    do $do_cleanup $nodes false
     exit 1
   }
 
@@ -226,15 +217,15 @@ def main [
   let start_time = (date now)
   mut ready_hosts = []
 
-  while ($ready_hosts | length) < ($expected_nodes | length) {
+  while ($ready_hosts | length) < ($nodes | length) {
     let elapsed = ((date now) - $start_time | into int) / 1_000_000_000
     if $elapsed >= $wait_timeout {
       print -e $"\nError: Timed out waiting for runners after ($wait_timeout)s."
-      do $do_cleanup $expected_nodes false
+      do $do_cleanup $nodes false
       exit 1
     }
 
-    let newly_ready = ($expected_nodes
+    let newly_ready = ($nodes
       | where {|node| not ($node.host in $ready_hosts)}
       | par-each {|node|
           let probe = (^ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=2 -o BatchMode=yes $"runner@($node.host)" "true" | complete)
@@ -252,14 +243,14 @@ def main [
       print $"  Builder online: ($node.host) \(($node.system)\)"
     }
 
-    if ($ready_hosts | length) < ($expected_nodes | length) {
+    if ($ready_hosts | length) < ($nodes | length) {
       sleep 2sec
     }
   }
 
-  print $"\nAll ($expected_nodes | length) builders online."
+  print $"\nAll ($nodes | length) builders online."
 
-  let builders_list = ($expected_nodes | each {|node|
+  let builders_list = ($nodes | each {|node|
     $"ssh-ng://runner@($node.host)?remote-program=/nix/var/nix/profiles/default/bin/nix-daemon ($node.system) - ($node.cores) 1 kvm,benchmark,big-parallel - -"
   })
   let builders_arg = ($builders_list | str join ";")
@@ -268,9 +259,9 @@ def main [
 
   try {
     ^nix ...$nix_args --builders $builders_arg --max-jobs $local_jobs
-    do $do_cleanup $expected_nodes $keep_alive
+    do $do_cleanup $nodes $keep_alive
   } catch {|err|
-    do $do_cleanup $expected_nodes $keep_alive
+    do $do_cleanup $nodes $keep_alive
     error make { msg: $"Nix build failed: ($err.msg)" }
   }
 }

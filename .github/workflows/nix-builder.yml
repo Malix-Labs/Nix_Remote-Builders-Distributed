@@ -39,7 +39,7 @@ on:
 
 jobs:
   builder:
-    name: "Nix Builder: ${{ matrix.name || matrix.id }}"
+    name: "Nix Builder: ${{ matrix.id }}"
     runs-on: ${{ matrix.os }}
     environment: "Nix Builders"
     strategy:
