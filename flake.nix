@@ -26,6 +26,13 @@
 
       systems = import inputs.systems;
 
+      flake = {
+        homeManagerModules = {
+          default = inputs.self.homeManagerModules.nix-remote;
+          nix-remote = import ./nix/modules/home-manager.nix inputs.self;
+        };
+      };
+
       perSystem =
         {
           config,
