@@ -17,6 +17,10 @@ on:
         description: "JSON matrix specification ({ include: [...] })"
         required: true
         type: string
+      environment:
+        description: "GitHub Actions environment name to source secrets from (optional)"
+        type: string
+        default: ""
       timeout_startup:
         description: "Wait for first connection in seconds"
         default: 300
@@ -41,7 +45,7 @@ jobs:
   builder:
     name: "Nix Builder: ${{ matrix.id }}"
     runs-on: ${{ matrix.os }}
-    environment: "Nix Builders"
+    environment: ${{ inputs.environment != '' && inputs.environment || null }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.matrix) }}
