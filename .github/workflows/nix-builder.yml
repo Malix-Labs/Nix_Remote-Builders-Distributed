@@ -10,7 +10,6 @@ on:
         type: string
       target:
         description: "Target or Nix command being executed"
-        required: false
         type: string
         default: ""
       matrix:
@@ -61,7 +60,7 @@ jobs:
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           hostname: "nix-builder-${{ inputs.session_id }}-${{ matrix.id }}"
-          args: "--accept-routes --ssh"
+          args: "--ssh"
 
       - name: "Watchdog: Connection & Idle Lifecycle"
         shell: bash
