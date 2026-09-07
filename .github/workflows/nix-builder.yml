@@ -123,7 +123,7 @@ jobs:
                 echo "Waiting for ${PHASE} (idle: ${IDLE_SECS}s / ${CURRENT_LIMIT}s, remaining: ${REMAINING}s)..."
               fi
 
-              if [ "$IDLE_SECS" -ge "$CURRENT_LIMIT" ]; then
+              if [ "$CURRENT_LIMIT" -gt 0 ] && [ "$IDLE_SECS" -ge "$CURRENT_LIMIT" ]; then
                 echo "Timeout of ${CURRENT_LIMIT}s exceeded during ${PHASE}. Terminating builder."
                 break
               fi
