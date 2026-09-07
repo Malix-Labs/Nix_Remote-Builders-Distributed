@@ -23,16 +23,16 @@ on:
         default: ""
       timeout_startup:
         description: "Wait for first connection in seconds"
-        default: 300
-        type: number
+        default: "300"
+        type: string
       timeout_idle:
         description: "Idle timeout between disconnections in seconds"
-        default: 300
-        type: number
+        default: "300"
+        type: string
       timeout_linger:
         description: "Grace period after completion signal in seconds"
-        default: 0
-        type: number
+        default: "0"
+        type: string
 
   workflow_call:
     inputs: *inputs
