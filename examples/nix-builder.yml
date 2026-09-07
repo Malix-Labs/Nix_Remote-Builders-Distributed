@@ -1,0 +1,53 @@
+# Copy this file to your repository at:
+# .github/workflows/nix-builder.yml
+#
+# This workflow sets up on-demand distributed Nix remote builders using
+# the reusable workflow from Malix-Labs/Nix_Remote-Builders-Distributed.
+
+name: "Nix Remote Builder"
+run-name: "${{ inputs.target != '' && format('Nix Remote: {0} [{1}]', inputs.target, inputs.session_id) || format('Nix Remote: [{0}]', inputs.session_id) }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_id:
+        description: "Unique session identifier"
+        required: true
+        type: string
+      target:
+        description: "Target or Nix command being executed"
+        type: string
+        default: ""
+      matrix:
+        description: "JSON matrix specification ({ include: [...] })"
+        required: true
+        type: string
+      timeout_startup:
+        description: "Timeout in seconds to wait for initial Tailscale connection (0 to disable)"
+        type: number
+        default: 300
+      timeout_idle:
+        description: "Timeout in seconds of inactivity before runner disconnects (0 to disable)"
+        type: number
+        default: 300
+      timeout_linger:
+        description: "Timeout in seconds to keep runner alive after build completes (0 to disable)"
+        type: number
+        default: 0
+
+jobs:
+  remote-builder:
+    name: "Remote Builder Dispatch"
+    uses: Malix-Labs/Nix_Remote-Builders-Distributed/.github/workflows/nix-builder.yml@main
+    with:
+      # Optional: specify a GitHub Actions Environment name if your TAILSCALE_AUTHKEY
+      # secret is stored within an Environment (e.g. "Nix Builders").
+      # If using standard Repository Secrets, set this to "" or omit this line.
+      environment: "Nix Builders"
+      matrix: ${{ inputs.matrix }}
+      session_id: ${{ inputs.session_id }}
+      target: ${{ inputs.target }}
+      timeout_startup: ${{ inputs.timeout_startup != '' && format('{0}', inputs.timeout_startup) || '300' }}
+      timeout_idle: ${{ inputs.timeout_idle != '' && format('{0}', inputs.timeout_idle) || '300' }}
+      timeout_linger: ${{ inputs.timeout_linger != '' && format('{0}', inputs.timeout_linger) || '0' }}
+    secrets: inherit

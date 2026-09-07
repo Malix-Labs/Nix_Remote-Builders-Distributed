@@ -32,7 +32,7 @@ in
       '';
       example = lib.literalExpression ''
         {
-          repo = "Malix-Labs/dotfiles";
+          repo = "my-org/my-infra";
         }
       '';
     };
