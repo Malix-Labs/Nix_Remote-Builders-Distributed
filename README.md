@@ -8,7 +8,7 @@ Nix's remote builders in a distributed manner, including a GitHub Action
 
 * **On-Demand & Ephemeral**: Zero 24/7 compute costs. Runners spin up on your chosen provider (GitHub Actions, etc.) only when a build needs compilation and self-destruct when finished.
 * **Intelligent Auto-Sizing with `nix-eval-jobs`**: Automatically inspects derivations, skips remote provisioning completely if everything is cached (0s delay), and scales x86/ARM/Darwin runners based on real unbuilt requirements.
-* **NAT Traversal via Tailscale**: Direct end-to-end WireGuard tunnel using ephemeral auth keys. No port forwarding or public IP required on your local machine.
+* **NAT Traversal via Tailscale**: Direct end-to-end WireGuard tunnel authenticated via OIDC (Workload Identity Federation) or OAuth. No port forwarding or public IP required on your local machine.
 * **3-Tier Configurable Lifecycle Watchdog**:
   * `timeout_startup` (default: 300s): Waits for local client to establish first connection.
   * `timeout_idle` (default: 300s): Idle grace window between commands / disconnections.
@@ -57,18 +57,20 @@ sequenceDiagram
 ## Prerequisites
 
 1. **Tailscale & Tailscale SSH**:
-   * Create an **ephemeral, reusable** auth key tagged with `tag:nix-builder` in [Tailscale Admin](https://login.tailscale.com/admin/settings/keys).
-   * Store it as `TAILSCALE_AUTHKEY` in your runner repository (`<owner>/<repo>`):
-     * **Option A: GitHub Environment (Recommended)**
-       Create an environment (e.g. `Nix Builders` or any name you prefer) under `Settings → Environments` and add `TAILSCALE_AUTHKEY` to it:
+   * Set up Tailscale authentication in your runner repository (`<owner>/<repo>`). You can use any of the following methods:
+     * **Method A: Workload Identity Federation / OIDC (Recommended, Secretless)**:
+       Create a Trust Credential in [Tailscale Admin → Trust credentials](https://login.tailscale.com/admin/settings/trust-credentials) for GitHub Actions with `tag:nix-builder`. Store `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`:
        ```bash
-       gh secret set TAILSCALE_AUTHKEY --repo <owner>/<repo> --env "<your-environment-name>"
+       gh secret set TS_OAUTH_CLIENT_ID --repo <owner>/<repo> --body "<your-client-id>"
+       gh secret set TS_AUDIENCE --repo <owner>/<repo> --body "<your-audience>"
        ```
-     * **Option B: Repository Secret**
-       Add `TAILSCALE_AUTHKEY` directly as a repository secret (accessible by all jobs without an environment):
+     * **Method B: OAuth Client Credentials**:
+       Create an OAuth client in [Tailscale Admin → OAuth clients](https://login.tailscale.com/admin/settings/oauth-clients) with the `auth_keys` write scope and `tag:nix-builder`. Store `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`:
        ```bash
-       gh secret set TAILSCALE_AUTHKEY --repo <owner>/<repo>
+       gh secret set TS_OAUTH_CLIENT_ID --repo <owner>/<repo> --body "<your-client-id>"
+       gh secret set TS_OAUTH_SECRET --repo <owner>/<repo> --body "<your-client-secret>"
        ```
+     *(Note: Secrets can be added as Repository Secrets or scoped within a GitHub Actions Environment e.g. `--env "Nix Builders"`).*
    * Enable Tailscale SSH for `tag:nix-builder` in your [Tailscale ACL Policy](https://login.tailscale.com/admin/acls):
      ```json
      "ssh": [

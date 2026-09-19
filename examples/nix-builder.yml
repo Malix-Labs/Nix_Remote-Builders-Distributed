@@ -48,8 +48,9 @@ jobs:
     name: "Remote Builder Dispatch"
     uses: Malix-Labs/Nix_Remote-Builders-Distributed/.github/workflows/nix-builder.yml@main
     with:
-      # Optional: specify a GitHub Actions Environment name if your TAILSCALE_AUTHKEY
-      # secret is stored within an Environment (e.g. "Nix Builders" or your custom env name).
+      # Optional: specify a GitHub Actions Environment name if your Tailscale
+      # secrets (OAuth or OIDC) are stored within an Environment
+      # (e.g. "Nix Builders" or your custom env name).
       # If using standard Repository Secrets, set this to "" or omit this line.
       environment: ${{ inputs.environment != '' && inputs.environment || '' }}
       tailscale_tags: ${{ inputs.tailscale_tags }}

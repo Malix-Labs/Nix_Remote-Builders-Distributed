@@ -40,8 +40,14 @@ on:
   workflow_call:
     inputs: *inputs
     secrets:
-      TAILSCALE_AUTHKEY:
-        description: "Tailscale Auth Key (optional if environment secret is configured)"
+      TS_OAUTH_CLIENT_ID:
+        description: "Tailscale OAuth Client ID"
+        required: false
+      TS_OAUTH_SECRET:
+        description: "Tailscale OAuth Client Secret (for OAuth authentication)"
+        required: false
+      TS_AUDIENCE:
+        description: "Tailscale OIDC Audience (for Workload Identity Federation)"
         required: false
 
 jobs:
@@ -49,6 +55,9 @@ jobs:
     name: "Nix Builder: ${{ matrix.id }}"
     runs-on: ${{ matrix.os }}
     environment: ${{ inputs.environment != '' && inputs.environment || null }}
+    permissions:
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.matrix) }}
@@ -62,7 +71,9 @@ jobs:
       - name: "Connect Tailscale with SSH"
         uses: tailscale/github-action@v4
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          audience: ${{ secrets.TS_AUDIENCE }}
           tags: ${{ inputs.tailscale_tags }}
           hostname: "nix-builder-${{ inputs.session_id }}-${{ matrix.id }}"
           args: "--ssh"
