@@ -62,6 +62,14 @@
               types = [ "file" ];
               files = "\\.nu$";
             };
+            nu-check = {
+              enable = true;
+              name = "nu-check";
+              description = "Validate and parse Nushell scripts";
+              package = pkgs.nushell;
+              entry = "${pkgs.lib.getExe pkgs.nushell} -c 'def main [...files: string] { mut err = false; for f in $files { if not (nu-check --debug ($f | path expand)) { $err = true } }; if $err { exit 1 } }' --";
+              files = "\\.nu$";
+            };
             nu-lint = {
               enable = true;
               name = "nu-lint";
