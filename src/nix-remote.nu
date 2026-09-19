@@ -1,3 +1,14 @@
+# Helper to assert external command prerequisites
+def check-cmd [cmd: closure, msg: string] {
+    let res = try {
+        do $cmd | complete
+    } catch { {exit_code: 1} }
+    if $res.exit_code != 0 {
+        print --stderr $msg
+        exit 1
+    }
+}
+
 # Distribute Nix builds across on-demand cloud runners over Tailscale SSH.
 def main [
   --provider: string = "gha" # Cloud provider backend
@@ -40,14 +51,9 @@ def main [
     }
 
     if $provider == "gha" {
-        let auth_check = try {
-            gh auth status | complete
-        } catch { {exit_code: 1} }
-        if $auth_check.exit_code != 0 {
-            print --stderr "Error: GitHub CLI ('gh') is not authenticated or not installed.\nPlease run 'gh auth login' or export GITHUB_TOKEN."
-            exit 1
-        }
+        check-cmd { gh auth status } "Error: GitHub CLI ('gh') is not authenticated or not installed.\nPlease run 'gh auth login' or export GITHUB_TOKEN."
     }
+    check-cmd { tailscale status } "Error: Tailscale is not running, not authenticated, or not installed.\nPlease run 'tailscale up' or 'tailscale login'."
 
     let xdg_config = (
         $env.XDG_CONFIG_HOME?
