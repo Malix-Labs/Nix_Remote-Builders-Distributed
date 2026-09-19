@@ -13,6 +13,7 @@ def main [
   --timeout-idle: int # Seconds of inactivity before runner disconnects
   --timeout-linger: int # Seconds to keep runner alive after build completion
   --repo: string # Target repository hosting the runner workflow (owner/repo)
+  --environment: string # GitHub Actions environment name containing secrets
   --keep-alive # Keep runners alive after command finishes
   ...rest: string # Nix command and arguments (e.g. build .#default)
 ] {
@@ -58,13 +59,19 @@ def main [
         )
     )
     let config_file = $xdg_config | path join "nix-remote" "config.toml"
-    let config_repo = if ($config_file | path exists) {
+    let config_data = if ($config_file | path exists) {
         try {
-            open $config_file | get --optional repo
-        } catch { null }
+            open $config_file
+        } catch { {} }
     } else {
-        null
+        {}
     }
+    let config_repo = try {
+        $config_data | get --optional repo
+    } catch { null }
+    let config_env = try {
+        $config_data | get --optional environment
+    } catch { null }
 
     let target_repo = if $repo != null and ($repo | str length) > 0 {
         $repo
@@ -87,6 +94,14 @@ def main [
                 exit 1
             }
         }
+    }
+
+    let target_env = if $environment != null and ($environment | str length) > 0 {
+        $environment
+    } else if $config_env != null and ($config_env | str length) > 0 {
+        $config_env
+    } else {
+        null
     }
 
     mut x86_cnt = 0
@@ -232,7 +247,8 @@ def main [
     let target_desc = ['nix' ...$nix_args] | str join ' '
 
     if $provider == "gha" {
-        print $"\nDispatching GitHub Actions workflow on ($target_repo)...\n  Session: ($session_id)\n  Target: ($target_desc)\n  Total builders: ($nodes | length) \(x86: ($x86_cnt), arm: ($arm_cnt), darwin: ($darwin_cnt)\)"
+        let env_log = if $target_env != null { $"\n  Environment: ($target_env)" } else { "" }
+        print $"\nDispatching GitHub Actions workflow on ($target_repo)...($env_log)\n  Session: ($session_id)\n  Target: ($target_desc)\n  Total builders: ($nodes | length) \(x86: ($x86_cnt), arm: ($arm_cnt), darwin: ($darwin_cnt)\)"
 
         mut gh_args = [
             workflow
@@ -248,6 +264,9 @@ def main [
             $"matrix=($matrix_json)"
         ]
 
+        if $target_env != null {
+            $gh_args ++= [-f $"environment=($target_env)"]
+        }
         if $timeout_startup != null {
             $gh_args ++= [-f $"timeout_startup=($timeout_startup)"]
         }

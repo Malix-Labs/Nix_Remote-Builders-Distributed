@@ -33,6 +33,7 @@ in
       example = lib.literalExpression ''
         {
           repo = "my-org/my-infra";
+          environment = "Nix Builders"; # Optional: any custom environment name
         }
       '';
     };

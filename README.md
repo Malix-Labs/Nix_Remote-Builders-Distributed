@@ -60,12 +60,12 @@ sequenceDiagram
    * Create an **ephemeral, reusable** auth key tagged with `tag:nix-builder` in [Tailscale Admin](https://login.tailscale.com/admin/settings/keys).
    * Store it as `TAILSCALE_AUTHKEY` in your runner repository (`<owner>/<repo>`):
      * **Option A: GitHub Environment (Recommended)**
-       Create an environment named `Nix Builders` under `Settings → Environments` and add `TAILSCALE_AUTHKEY` to it:
+       Create an environment (e.g. `Nix Builders` or any name you prefer) under `Settings → Environments` and add `TAILSCALE_AUTHKEY` to it:
        ```bash
-       gh secret set TAILSCALE_AUTHKEY --repo <owner>/<repo> --env "Nix Builders"
+       gh secret set TAILSCALE_AUTHKEY --repo <owner>/<repo> --env "<your-environment-name>"
        ```
      * **Option B: Repository Secret**
-       Add `TAILSCALE_AUTHKEY` directly as a repository secret:
+       Add `TAILSCALE_AUTHKEY` directly as a repository secret (accessible by all jobs without an environment):
        ```bash
        gh secret set TAILSCALE_AUTHKEY --repo <owner>/<repo>
        ```
@@ -124,6 +124,7 @@ programs.nix-remote = {
   enable = true;
   settings = {
     repo = "<owner>/<repo>"; # Target repository hosting your .github/workflows/nix-builder.yml
+    environment = "<env-name>"; # Optional: custom GitHub Actions environment containing secrets
   };
 };
 ```
@@ -137,6 +138,7 @@ home.packages = [
 And manually configure `~/.config/nix-remote/config.toml`:
 ```toml
 repo = "<owner>/<repo>"
+environment = "<env-name>" # Optional: custom GitHub Actions environment containing secrets
 ```
 
 ## CLI Options (`nix-remote`)
@@ -162,6 +164,7 @@ Flags:
   --timeout-idle <int>: Seconds of inactivity before runner disconnects
   --timeout-linger <int>: Seconds to keep runner alive after build completion
   --repo <string>: Target repository hosting the runner workflow (owner/repo)
+  --environment <string>: GitHub Actions environment name containing secrets
   --keep-alive: Keep runners alive after command finishes
 
 Parameters:
