@@ -303,7 +303,7 @@ def main [
     mut ready_hosts = []
 
     while ($ready_hosts | length) < ($nodes | length) {
-        let elapsed = ((date now) - $start_time | into int) / 1_000_000_000
+        let elapsed = ((date now) - $start_time) // 1sec
         if $elapsed >= $wait_timeout {
             print --stderr $"\nError: Timed out waiting for runners after ($wait_timeout)s."
             do $do_cleanup $nodes false
