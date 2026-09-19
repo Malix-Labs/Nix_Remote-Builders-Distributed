@@ -219,7 +219,9 @@ def main [
         $x86_cnt = 1
     }
 
-    let session_id = $"b(random chars --length 6 | str downcase)"
+    # see https://codeberg.org/wvhulle/nu-lint/issues/114
+    # nu-lint-ignore: nu_parse_error
+    let session_id = $"b(random chars --length 6 | str lowercase)"
 
     let nodes = [
         ...(
