@@ -310,6 +310,20 @@ def main [
             exit 1
         }
 
+        if $provider == "gha" {
+            let failed = try {
+                gh run list --repo $target_repo --limit 5 --json databaseId,status,conclusion,displayTitle
+                | from json
+                | where status == "completed" and conclusion in [failure cancelled startup_failure timed_out] and ($it.displayTitle? | default "" | str contains $"[($session_id)]")
+                | first
+            }
+            if $failed != null {
+                print --stderr $"\nError: GitHub Actions workflow run failed (conclusion: ($failed.conclusion)).\nView logs: https://github.com/($target_repo)/actions/runs/($failed.databaseId)"
+                do $do_cleanup $nodes false
+                exit 1
+            }
+        }
+
         let newly_ready = ($nodes
       | where not ($it.host in $ready_hosts)
       | par-each {|node|
@@ -329,7 +343,7 @@ def main [
         }
 
         if ($ready_hosts | length) < ($nodes | length) {
-            sleep 2sec
+            sleep 5sec
         }
     }
 
