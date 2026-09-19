@@ -81,7 +81,47 @@
             actionlint.enable = true;
           };
 
-          formatter = pkgs.nixfmt;
+          # Waiting for https://github.com/cachix/git-hooks.nix/pull/743
+          formatter =
+            let
+              cfg = config.pre-commit.settings;
+            in
+            pkgs.writeShellScriptBin "pre-commit-fmt" ''
+              set -euo pipefail
+              export PATH="${
+                pkgs.lib.makeBinPath (
+                  [
+                    cfg.gitPackage
+                    cfg.package
+                  ]
+                  ++ cfg.enabledPackages
+                )
+              }:$PATH"
+
+              exitcode=0
+              if [ "$#" -gt 0 ]; then
+                ${pkgs.lib.getExe cfg.package} run -c ${cfg.configFile} --files "$@" || exitcode=$?
+              else
+                if [ -n "''${PRJ_ROOT:-}" ]; then
+                  cd "$PRJ_ROOT"
+                fi
+                ${pkgs.lib.getExe cfg.package} run -c ${cfg.configFile} --all-files || exitcode=$?
+              fi
+
+              # pre-commit returns 1 when files were modified by hooks.
+              # For a formatter (`nix fmt`), modifying files is the intended outcome.
+              # If exit code was 1, re-run to distinguish between successful formatting changes (clean on 2nd pass)
+              # and actual errors/syntax failures (fails again on 2nd pass).
+              if [ "$exitcode" -eq 1 ]; then
+                if [ "$#" -gt 0 ]; then
+                  ${pkgs.lib.getExe cfg.package} run -c ${cfg.configFile} --files "$@"
+                else
+                  ${pkgs.lib.getExe cfg.package} run -c ${cfg.configFile} --all-files
+                fi
+              else
+                exit "$exitcode"
+              fi
+            '';
 
           packages = {
             default = nix-remote;
