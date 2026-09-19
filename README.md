@@ -125,6 +125,7 @@ programs.nix-remote = {
   settings = {
     repo = "<owner>/<repo>"; # Target repository hosting your .github/workflows/nix-builder.yml
     environment = "<env-name>"; # Optional: custom GitHub Actions environment containing secrets
+    tailscale_tags = "tag:nix-builder"; # Optional: custom Tailscale ACL tags
   };
 };
 ```
@@ -139,6 +140,7 @@ And manually configure `~/.config/nix-remote/config.toml`:
 ```toml
 repo = "<owner>/<repo>"
 environment = "<env-name>" # Optional: custom GitHub Actions environment containing secrets
+tailscale_tags = "tag:nix-builder" # Optional: custom Tailscale ACL tags
 ```
 
 ## CLI Options (`nix-remote`)
@@ -165,6 +167,7 @@ Flags:
   --timeout-linger <int>: Seconds to keep runner alive after build completion (default: 0)
   --repo <string>: Target repository hosting the runner workflow (owner/repo)
   --environment <string>: GitHub Actions environment name containing secrets
+  --tailscale-tags <string>: Tailscale ACL tags to apply to runner nodes
   --keep-alive: Keep runners alive after command finishes
 
 Parameters:

@@ -34,6 +34,7 @@ in
         {
           repo = "my-org/my-infra";
           environment = "Nix Builders"; # Optional: any custom environment name
+          tailscale_tags = "tag:nix-builder"; # Optional: custom Tailscale ACL tags
         }
       '';
     };

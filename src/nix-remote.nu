@@ -25,6 +25,7 @@ def main [
   --timeout-linger: int = 0 # Seconds to keep runner alive after build completion
   --repo: string # Target repository hosting the runner workflow (owner/repo)
   --environment: string # GitHub Actions environment name containing secrets
+  --tailscale-tags: string # Tailscale ACL tags to apply to runner nodes
   --keep-alive # Keep runners alive after command finishes
   ...rest: string # Nix command and arguments (e.g. build .#default)
 ] {
@@ -78,6 +79,9 @@ def main [
     let config_env = try {
         $config_data | get --optional environment
     } catch { null }
+    let config_tags = try {
+        $config_data | get --optional tailscale_tags
+    } catch { null }
 
     let target_repo = if $repo != null and ($repo | str length) > 0 {
         $repo
@@ -108,6 +112,14 @@ def main [
         $config_env
     } else {
         null
+    }
+
+    let target_tags = if $tailscale_tags != null and ($tailscale_tags | str length) > 0 {
+        $tailscale_tags
+    } else if $config_tags != null and ($config_tags | str length) > 0 {
+        $config_tags
+    } else {
+        "tag:nix-builder"
     }
 
     mut x86_cnt = 0
@@ -256,7 +268,7 @@ def main [
 
     if $provider == "gha" {
         let env_log = if $target_env != null { $"\n  Environment: ($target_env)" } else { "" }
-        print $"\nDispatching GitHub Actions workflow on ($target_repo)...($env_log)\n  Session: ($session_id)\n  Target: ($target_desc)\n  Total builders: ($nodes | length) \(x86: ($x86_cnt), arm: ($arm_cnt), darwin: ($darwin_cnt)\)"
+        print $"\nDispatching GitHub Actions workflow on ($target_repo)...($env_log)\n  Tailscale Tags: ($target_tags)\n  Session: ($session_id)\n  Target: ($target_desc)\n  Total builders: ($nodes | length) \(x86: ($x86_cnt), arm: ($arm_cnt), darwin: ($darwin_cnt)\)"
 
         mut gh_args = [
             workflow
@@ -270,6 +282,8 @@ def main [
             $"target=($target_desc)"
             -f
             $"matrix=($matrix_json)"
+            -f
+            $"tailscale_tags=($target_tags)"
             -f
             $"timeout_startup=($timeout_startup)"
             -f

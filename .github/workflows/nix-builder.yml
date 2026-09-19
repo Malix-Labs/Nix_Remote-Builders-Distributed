@@ -20,6 +20,10 @@ on:
         description: "GitHub Actions environment name to source secrets from (optional)"
         type: string
         default: ""
+      tailscale_tags:
+        description: "Tailscale ACL tags to apply to runner nodes"
+        default: "tag:nix-builder"
+        type: string
       timeout_startup:
         description: "Wait for first connection in seconds"
         default: "300"
@@ -59,6 +63,7 @@ jobs:
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: ${{ inputs.tailscale_tags }}
           hostname: "nix-builder-${{ inputs.session_id }}-${{ matrix.id }}"
           args: "--ssh"
 
