@@ -160,9 +160,9 @@ Flags:
   --arm <int>: Force an exact aarch64-linux runner count
   --darwin <int>: Force an exact aarch64-darwin runner count
   --local-jobs <int>: Local Nix jobs limit (0 offloads all builds to remote) (default: 0)
-  --timeout-startup <int>: Seconds to wait for initial runner connection
-  --timeout-idle <int>: Seconds of inactivity before runner disconnects
-  --timeout-linger <int>: Seconds to keep runner alive after build completion
+  --timeout-startup <int>: Seconds to wait for initial runner connection (default: 300)
+  --timeout-idle <int>: Seconds of inactivity before runner disconnects (default: 300)
+  --timeout-linger <int>: Seconds to keep runner alive after build completion (default: 0)
   --repo <string>: Target repository hosting the runner workflow (owner/repo)
   --environment <string>: GitHub Actions environment name containing secrets
   --keep-alive: Keep runners alive after command finishes

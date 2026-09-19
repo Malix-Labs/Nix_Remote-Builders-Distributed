@@ -20,9 +20,9 @@ def main [
   --arm: int # Force an exact aarch64-linux runner count
   --darwin: int # Force an exact aarch64-darwin runner count
   --local-jobs: int = 0 # Local Nix jobs limit (0 offloads all builds to remote)
-  --timeout-startup: int # Seconds to wait for initial runner connection
-  --timeout-idle: int # Seconds of inactivity before runner disconnects
-  --timeout-linger: int # Seconds to keep runner alive after build completion
+  --timeout-startup: int = 300 # Seconds to wait for initial runner connection
+  --timeout-idle: int = 300 # Seconds of inactivity before runner disconnects
+  --timeout-linger: int = 0 # Seconds to keep runner alive after build completion
   --repo: string # Target repository hosting the runner workflow (owner/repo)
   --environment: string # GitHub Actions environment name containing secrets
   --keep-alive # Keep runners alive after command finishes
@@ -270,19 +270,16 @@ def main [
             $"target=($target_desc)"
             -f
             $"matrix=($matrix_json)"
+            -f
+            $"timeout_startup=($timeout_startup)"
+            -f
+            $"timeout_idle=($timeout_idle)"
+            -f
+            $"timeout_linger=($timeout_linger)"
         ]
 
         if $target_env != null {
             $gh_args ++= [-f $"environment=($target_env)"]
-        }
-        if $timeout_startup != null {
-            $gh_args ++= [-f $"timeout_startup=($timeout_startup)"]
-        }
-        if $timeout_idle != null {
-            $gh_args ++= [-f $"timeout_idle=($timeout_idle)"]
-        }
-        if $timeout_linger != null {
-            $gh_args ++= [-f $"timeout_linger=($timeout_linger)"]
         }
 
         let dispatch_res = gh ...$gh_args | complete
@@ -298,14 +295,13 @@ def main [
     }
 
     print "\nWaiting for builders to join Tailnet (Tailscale SSH)..."
-    let wait_timeout = 300
     let start_time = (date now)
     mut ready_hosts = []
 
     while ($ready_hosts | length) < ($nodes | length) {
         let elapsed = ((date now) - $start_time) // 1sec
-        if $elapsed >= $wait_timeout {
-            print --stderr $"\nError: Timed out waiting for runners after ($wait_timeout)s."
+        if $timeout_startup > 0 and $elapsed >= $timeout_startup {
+            print --stderr $"\nError: Timed out waiting for runners after ($timeout_startup)s."
             do $do_cleanup $nodes false
             exit 1
         }
