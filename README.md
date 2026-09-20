@@ -4,15 +4,25 @@ Nix's remote builders in a distributed manner, including a GitHub Reusable Workf
 
 ## Overview
 
-`nix-remote` allows you to dynamically offload any `nix` command (`build`, `flake check`, `shell`, `develop`) to an on-demand cluster of remote builders.
+Compiling heavy Nix derivations (such as Linux kernels, WebKit, LLVM, or cross-compiled packages) can overwhelm your local machine, drain battery, and take hours. Traditional remote builders require dedicated servers running 24/7, accumulating steep infrastructure bills even while idle.
 
-* **On-Demand & Ephemeral**: Zero 24/7 compute costs. Runners spin up on your chosen provider (GitHub Actions, etc.) only when a build needs compilation and self-destruct when finished.
-* **Intelligent Auto-Sizing with `nix-eval-jobs`**: Automatically inspects derivations, skips remote provisioning completely if everything is cached (0s delay), and scales x86/ARM/Darwin runners based on real unbuilt requirements.
-* **NAT Traversal via Tailscale**: Direct end-to-end WireGuard tunnel authenticated via OIDC (Workload Identity Federation) or OAuth. No port forwarding or public IP required on your local machine.
-* **3-Tier Configurable Lifecycle Watchdog**:
-  * `timeout_startup` (default: 300s): Waits for local client to establish first connection.
-  * `timeout_idle` (default: 300s): Idle grace window between commands / disconnections.
-  * `timeout_linger` (default: 0s): Grace period before shutdown after an explicit completion signal.
+`nix-remote` dynamically offloads any `nix` command (`build`, `flake check`, `shell`, `develop`) to an on-demand cluster of cloud builders over Tailscale SSH with zero persistent server costs.
+
+```sh
+# Offload heavy builds to on-demand cloud runners in one command
+nix-remote build .#myHeavyPackage
+
+# Or execute ad-hoc without installing nix-remote
+nix run github:Malix-Labs/Nix_Remote-Builders-Distributed -- build .#myHeavyPackage
+```
+
+### Features
+
+- **Zero Idle Costs**: Runners spin up on your chosen cloud provider (GitHub Workflows) only when compilation is required and self-destruct as soon as the build finishes.
+- **Instant Cache Bypass with `nix-eval-jobs`**: Automatically inspects derivations in `<50ms`. If everything is already cached upstream (e.g. `cache.nixos.org`), builds run locally with zero cloud provisioning delay.
+- **Multi-Arch Matrix**: Automatically scales and allocates native `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` runners in parallel according to real unbuilt derivation requirements.
+- **Direct WireGuard Tunneling (Tailscale SSH)**: End-to-end encrypted connection authenticated via secretless OIDC (Workload Identity Federation) or OAuth. No port forwarding, public IPs, or firewall holes needed.
+- **Drop-in Nix Replacement**: Seamlessly prefix standard commands (`build`, `flake check`) or use `--fast` for pipelined builds with `nix-fast-build`.
 
 ## Architecture
 
@@ -86,11 +96,11 @@ sequenceDiagram
    * Installed locally and authenticated (`gh auth login`).
 3. **Nix with Flakes enabled**.
 
-## Runner Workflow Setup (Caller Repository)
+## Runner Setup (GitHub Workflow)
 
-In your runner repository (where builds will execute in GitHub Actions), copy the caller workflow template to `.github/workflows/nix-builder.yml`:
+In your runner repository (where builds will execute via GitHub Workflows), copy the caller workflow template to `.github/workflows/nix-builder.yml`:
 
-👉 **[`examples/nix-builder.yml`](examples/nix-builder.yml)**
+Template: [`examples/nix-builder.yml`](examples/nix-builder.yml)
 
 
 > [!TIP]
@@ -99,7 +109,7 @@ In your runner repository (where builds will execute in GitHub Actions), copy th
 > - If `environment` is omitted or set to `""`, the reusable workflow safely evaluates `environment` to `null`. This prevents GitHub Actions from automatically creating empty environments in your repository when using repository-level secrets.
 > - Passing timeouts with `format('{0}', inputs.timeout_*)` guarantees type compatibility across reusable workflow boundaries while preserving native numeric input fields in the GitHub Actions dispatch UI.
 
-## Setup
+## Client Setup
 
 ### Flakes
 
@@ -258,6 +268,31 @@ environment = "<env-name>" # Optional: custom GitHub Actions environment contain
 tailscale_tags = "tag:nix-builder" # Optional: custom Tailscale ACL tags
 ```
 
+## Usage & Examples
+
+```sh
+# Auto-scales runners based on unbuilt derivations detected by nix-eval-jobs
+nix-remote build .#myHeavyPackage
+
+# Pass 'nix' prefix optionally (both 'nix-remote build' and 'nix-remote nix build' work)
+nix-remote nix build .#myHeavyPackage
+
+# Pass Nix-specific flags (e.g. -L, --print-out-paths) using the '--' separator
+nix-remote -- build -L --print-out-paths .#myHeavyPackage
+
+# Run flake checks across remote runners using nix-fast-build
+nix-remote flake check
+
+# Explicitly allocate 4 x86_64 and 2 aarch64 runners
+nix-remote --x86 4 --arm 2 build .#multiArchTarget
+
+# Keep runners alive for 10 minutes (600s linger) for subsequent builds
+nix-remote --timeout-linger 600 -- build -L .#part1
+
+# Override repository without editing config.toml
+nix-remote --repo <owner>/<repo> build .#target
+```
+
 ## CLI Options (`nix-remote`)
 
 ```text
@@ -297,32 +332,7 @@ Each provisioned cloud runner runs a resilient background watchdog script that g
 | :--- | :--- | :--- | :--- |
 | **Startup Wait** | `timeout_startup` / `--timeout-startup` | `300s` | Runner waits for the local client to establish its first SSH connection. Auto-cancels if client never connects. Set `0` to disable. |
 | **Idle Monitor** | `timeout_idle` / `--timeout-idle` | `300s` | Tracks active SSH connections (`ss` / `lsof`) and `nix-daemon` activity. When connections drop to zero and remain idle past this threshold, the runner safely terminates. Set `0` to disable idle teardown. |
-| **Completion Signal** | `/tmp/nix-builder-done` | – | `nix-remote` sends `ssh runner@<host> touch /tmp/nix-builder-done` as soon as the build finishes (unless `--keep-alive` is set). |
+| **Completion Signal** | `/tmp/nix-builder-done` | - | `nix-remote` sends `ssh runner@<host> touch /tmp/nix-builder-done` as soon as the build finishes (unless `--keep-alive` is set). |
 | **Post-Build Linger**| `timeout_linger` / `--timeout-linger` | `0s` | Once `/tmp/nix-builder-done` is signaled, the runner remains alive for this extra duration before shutting down (useful for running rapid successive builds on a warm runner). |
 
 When terminating, the runner triggers post-run cleanup where `tailscale/github-action` logs out (promptly removing the ephemeral node from your Tailnet) and the GitHub Actions VM terminates.
-
-### Examples
-
-```sh
-# Auto-scales runners based on unbuilt derivations detected by nix-eval-jobs
-nix-remote build .#myHeavyPackage
-
-# Pass 'nix' prefix optionally (both 'nix-remote build' and 'nix-remote nix build' work)
-nix-remote nix build .#myHeavyPackage
-
-# Pass Nix-specific flags (e.g. -L, --print-out-paths) using the '--' separator
-nix-remote -- build -L --print-out-paths .#myHeavyPackage
-
-# Run flake checks across remote runners using nix-fast-build
-nix-remote flake check
-
-# Explicitly allocate 4 x86_64 and 2 aarch64 runners
-nix-remote --x86 4 --arm 2 build .#multiArchTarget
-
-# Keep runners alive for 10 minutes (600s linger) for subsequent builds
-nix-remote --timeout-linger 600 -- build -L .#part1
-
-# Override repository without editing config.toml
-nix-remote --repo <owner>/<repo> build .#target
-```
