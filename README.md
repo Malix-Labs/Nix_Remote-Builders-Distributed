@@ -1,6 +1,6 @@
 # Nix - Remote Builders Distributed
 
-Nix's remote builders in a distributed manner, including a GitHub Action
+Nix's remote builders in a distributed manner, including a GitHub Reusable Workflow
 
 ## Overview
 
