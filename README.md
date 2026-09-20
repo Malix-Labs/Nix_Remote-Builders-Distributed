@@ -326,20 +326,3 @@ nix-remote --timeout-linger 600 -- build -L .#part1
 # Override repository without editing config.toml
 nix-remote --repo <owner>/<repo> build .#target
 ```
-
-## Development
-
-Enter the development shell with all dependencies pre-configured and git hooks active:
-```sh
-nix develop
-```
-
-Format code:
-```sh
-nix fmt
-```
-
-Run checks:
-```sh
-nix flake check
-```
