@@ -1,4 +1,3 @@
-self:
 {
   config,
   lib,
@@ -8,7 +7,6 @@ self:
 let
   inherit (lib)
     mkEnableOption
-    mkPackageOption
     mkOption
     mkIf
     ;
@@ -20,8 +18,11 @@ in
   options.programs.nix-remote = {
     enable = mkEnableOption "nix-remote distributed builder orchestrator";
 
-    package = mkPackageOption self.packages.${pkgs.stdenv.hostPlatform.system} "nix-remote" {
-      pkgsText = "inputs.nix-remote-builders.packages.\${pkgs.stdenv.hostPlatform.system}";
+    package = mkOption {
+      type = lib.types.package;
+      default = pkgs.callPackage ../package.nix { };
+      defaultText = lib.literalExpression "pkgs.callPackage ../package.nix { }";
+      description = "The nix-remote package to use.";
     };
 
     settings = mkOption {

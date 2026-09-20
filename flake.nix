@@ -27,10 +27,14 @@
       systems = import inputs.systems;
 
       flake = {
-        homeManagerModules = {
-          default = inputs.self.homeManagerModules.nix-remote;
-          nix-remote = import ./nix/modules/home-manager.nix inputs.self;
-        };
+        homeManagerModules =
+          let
+            homeManagerModule = import ./nix/modules/home-manager.nix;
+          in
+          {
+            nix-remote = homeManagerModule;
+            default = homeManagerModule;
+          };
       };
 
       perSystem =
@@ -40,17 +44,7 @@
           ...
         }:
         let
-          nix-remote = pkgs.writeShellApplication {
-            name = "nix-remote";
-            runtimeInputs = with pkgs; [
-              nushell
-              nix-eval-jobs
-              nix-fast-build
-            ];
-            text = ''
-              exec nu "${./src/nix-remote.nu}" "$@"
-            '';
-          };
+          nix-remote = pkgs.callPackage ./nix/package.nix { };
         in
         {
           pre-commit.settings.hooks = {
@@ -124,8 +118,8 @@
             '';
 
           packages = {
-            default = nix-remote;
             inherit nix-remote;
+            default = nix-remote;
           };
 
           devShells.default = pkgs.mkShell {
