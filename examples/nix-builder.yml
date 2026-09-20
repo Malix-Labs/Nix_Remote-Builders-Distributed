@@ -46,6 +46,9 @@ on:
 jobs:
   remote-builder:
     name: "Remote Builder Dispatch"
+    permissions:
+      id-token: write
+      contents: read
     uses: Malix-Labs/Nix_Remote-Builders-Distributed/.github/workflows/nix-builder.yml@main
     with:
       # Optional: specify a GitHub Actions Environment name if your Tailscale
