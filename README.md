@@ -60,13 +60,13 @@ sequenceDiagram
    * Set up Tailscale authentication in your runner repository (`<owner>/<repo>`). You can use any of the following methods:
      * **Method A: Workload Identity Federation / OIDC (Recommended, Secretless)**:
        Create a Trust Credential in [Tailscale Admin → Trust credentials](https://login.tailscale.com/admin/settings/trust-credentials) for GitHub Actions with `tag:nix-builder`. Store `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`:
-       ```bash
+       ```sh
        gh secret set TS_OAUTH_CLIENT_ID --repo <owner>/<repo> --body "<your-client-id>"
        gh secret set TS_AUDIENCE --repo <owner>/<repo> --body "<your-audience>"
        ```
      * **Method B: OAuth Client Credentials**:
        Create an OAuth client in [Tailscale Admin → OAuth clients](https://login.tailscale.com/admin/settings/oauth-clients) with the `auth_keys` write scope and `tag:nix-builder`. Store `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`:
-       ```bash
+       ```sh
        gh secret set TS_OAUTH_CLIENT_ID --repo <owner>/<repo> --body "<your-client-id>"
        gh secret set TS_OAUTH_SECRET --repo <owner>/<repo> --body "<your-client-secret>"
        ```
@@ -99,29 +99,147 @@ In your runner repository (where builds will execute in GitHub Actions), copy th
 > - If `environment` is omitted or set to `""`, the reusable workflow safely evaluates `environment` to `null`. This prevents GitHub Actions from automatically creating empty environments in your repository when using repository-level secrets.
 > - Passing timeouts with `format('{0}', inputs.timeout_*)` guarantees type compatibility across reusable workflow boundaries while preserving native numeric input fields in the GitHub Actions dispatch UI.
 
-## Quick Start
+## Setup
 
-### Run directly via Flake:
-```bash
-# Build a target using on-demand remote builders
-nix run github:Malix-Labs/Nix_Remote-Builders-Distributed -- build .#toplevel
+### Flakes
 
-# Run a flake check across remote builders
-nix run github:Malix-Labs/Nix_Remote-Builders-Distributed -- flake check
-```
+1. Add input to `flake.nix`:
+   ```nix
+   inputs.nix-remote-builders = {
+     url = "github:Malix-Labs/Nix_Remote-Builders-Distributed";
+     inputs.nixpkgs.follows = "nixpkgs";
+   };
+   ```
+2. Use as:
+   - **Home Manager Module (Recommended)**:
+     ```nix
+     imports = [
+       inputs.nix-remote-builders.homeManagerModules.default
+     ];
+     ```
+   - **Package**:
+     ```nix
+     inputs.nix-remote-builders.packages.${pkgs.stdenv.hostPlatform.system}.default
+     ```
+   - **Imperative Profile**:
+     - **`nix profile`**:
+       ```sh
+       nix profile install github:Malix-Labs/Nix_Remote-Builders-Distributed
+       ```
+     - **`nix-env` (legacy)**:
+       ```sh
+       nix-env -iE '(import <nixpkgs> {}).callPackage (fetchTarball "https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed/archive/main.tar.gz") {}'
+       ```
+   - **Ephemeral Shell**:
+     - **`nix shell`**:
+       ```sh
+       nix shell github:Malix-Labs/Nix_Remote-Builders-Distributed
+       ```
+     - **`nix-shell` (legacy)**:
+       ```sh
+       nix-shell -p '(import <nixpkgs> {}).callPackage (fetchTarball "https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed/archive/main.tar.gz") {}'
+       ```
+   - **Ephemeral Run**:
+     - **`nix run`**:
+       ```sh
+       nix run github:Malix-Labs/Nix_Remote-Builders-Distributed -- --repo <owner>/<repo> build .#target
+       ```
+     - **`nix-shell --run` (legacy)**:
+       ```sh
+       nix-shell -p '(import <nixpkgs> {}).callPackage (fetchTarball "https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed/archive/main.tar.gz") {}' --run 'nix-remote --repo <owner>/<repo> build .#target'
+       ```
 
-### Install via Home Manager:
-Add to your `flake.nix`:
+### [`tack`](https://github.com/manic-systems/tack)
+
+1. Add dependency:
+   ```sh
+   tack add nix-remote-builders https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed
+   ```
+2. Use as:
+   - **Home Manager Module (Recommended)**:
+     ```nix
+     imports = [
+       (import (import ./.tack).nix-remote-builders { inherit pkgs; }).homeManagerModules.default
+     ];
+     ```
+   - **Package**:
+     ```nix
+     import (import ./.tack).nix-remote-builders { inherit pkgs; }
+     ```
+
+### [`npins`](https://github.com/andir/npins)
+
+1. Add dependency:
+   ```sh
+   npins add git https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed -n nix-remote-builders
+   ```
+2. Use as:
+   - **Home Manager Module (Recommended)**:
+     ```nix
+     imports = [
+       (import (import ./npins).nix-remote-builders { inherit pkgs; }).homeManagerModules.default
+     ];
+     ```
+   - **Package**:
+     ```nix
+     import (import ./npins).nix-remote-builders { inherit pkgs; }
+     ```
+
+### [`niv`](https://github.com/nmattia/niv)
+
+1. Add dependency:
+   ```sh
+   niv add Malix-Labs/Nix_Remote-Builders-Distributed -n nix-remote-builders
+   ```
+2. Use as:
+   - **Home Manager Module (Recommended)**:
+     ```nix
+     imports = [
+       (import (import ./nix/sources.nix).nix-remote-builders { inherit pkgs; }).homeManagerModules.default
+     ];
+     ```
+   - **Package**:
+     ```nix
+     import (import ./nix/sources.nix).nix-remote-builders { inherit pkgs; }
+     ```
+
+### `builtins.fetchGit`
+
+- **Home Manager Module (Recommended)**:
+  ```nix
+  imports = [
+    (import (builtins.fetchGit {
+      url = "https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed.git";
+      rev = "<COMMIT_HASH>";
+    }) { inherit pkgs; }).homeManagerModules.default
+  ];
+  ```
+- **Package**:
+  ```nix
+  import (builtins.fetchGit {
+    url = "https://github.com/Malix-Labs/Nix_Remote-Builders-Distributed.git";
+    rev = "<COMMIT_HASH>";
+  }) { inherit pkgs; }
+  ```
+
+### `builtins.getFlake`
+
+- **Home Manager Module (Recommended)**:
+  ```nix
+  imports = [
+    (builtins.getFlake "github:Malix-Labs/Nix_Remote-Builders-Distributed/<REV_OR_TAG>").homeManagerModules.default
+  ];
+  ```
+- **Package**:
+  ```nix
+  (builtins.getFlake "github:Malix-Labs/Nix_Remote-Builders-Distributed/<REV_OR_TAG>").packages.${pkgs.stdenv.hostPlatform.system}.default
+  ```
+
+### Configuration
+
+#### Home Manager:
+Configure your target runner repository and options in your Home Manager configuration:
 ```nix
-inputs.nix-remote-builders.url = "github:Malix-Labs/Nix_Remote-Builders-Distributed";
-```
-
-Import the module and configure your default runner repository:
-```nix
-imports = [
-  inputs.nix-remote-builders.homeManagerModules.default
-];
-
 programs.nix-remote = {
   enable = true;
   settings = {
@@ -132,13 +250,8 @@ programs.nix-remote = {
 };
 ```
 
-### Or install standalone package:
-```nix
-home.packages = [
-  inputs.nix-remote-builders.packages.${pkgs.system}.default
-];
-```
-And manually configure `~/.config/nix-remote/config.toml`:
+#### Standalone / Manual:
+Configure `~/.config/nix-remote/config.toml`:
 ```toml
 repo = "<owner>/<repo>"
 environment = "<env-name>" # Optional: custom GitHub Actions environment containing secrets
@@ -191,9 +304,15 @@ When terminating, the runner triggers post-run cleanup where `tailscale/github-a
 
 ### Examples
 
-```bash
+```sh
 # Auto-scales runners based on unbuilt derivations detected by nix-eval-jobs
 nix-remote build .#myHeavyPackage
+
+# Pass 'nix' prefix optionally (both 'nix-remote build' and 'nix-remote nix build' work)
+nix-remote nix build .#myHeavyPackage
+
+# Pass Nix-specific flags (e.g. -L, --print-out-paths) using the '--' separator
+nix-remote -- build -L --print-out-paths .#myHeavyPackage
 
 # Run flake checks across remote runners using nix-fast-build
 nix-remote flake check
@@ -202,7 +321,7 @@ nix-remote flake check
 nix-remote --x86 4 --arm 2 build .#multiArchTarget
 
 # Keep runners alive for 10 minutes (600s linger) for subsequent builds
-nix-remote --timeout-linger 600 build .#part1
+nix-remote --timeout-linger 600 -- build -L .#part1
 
 # Override repository without editing config.toml
 nix-remote --repo <owner>/<repo> build .#target
@@ -211,16 +330,16 @@ nix-remote --repo <owner>/<repo> build .#target
 ## Development
 
 Enter the development shell with all dependencies pre-configured and git hooks active:
-```bash
+```sh
 nix develop
 ```
 
 Format code:
-```bash
+```sh
 nix fmt
 ```
 
 Run checks:
-```bash
+```sh
 nix flake check
 ```
