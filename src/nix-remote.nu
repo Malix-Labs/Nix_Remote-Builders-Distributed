@@ -328,7 +328,7 @@ def main [
                 | first
             }
             if $failed != null {
-                print --stderr $"\nError: GitHub Actions workflow run failed (conclusion: ($failed.conclusion)).\nView logs: https://github.com/($target_repo)/actions/runs/($failed.databaseId)"
+                print --stderr $"\nError: GitHub Actions workflow run failed with conclusion '($failed.conclusion)'.\nView logs: https://github.com/($target_repo)/actions/runs/($failed.databaseId)"
                 do $do_cleanup $nodes false
                 exit 1
             }
