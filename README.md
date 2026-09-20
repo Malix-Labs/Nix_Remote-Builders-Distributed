@@ -76,7 +76,7 @@ sequenceDiagram
      "ssh": [
        {
          "action": "accept",
-         "src": ["autogroup:members"],
+         "src": ["autogroup:member"],
          "dst": ["tag:nix-builder"],
          "users": ["runner", "root", "autogroup:nonroot"]
        }
